@@ -72,7 +72,30 @@ Chain: Node {
     - `slot_start_time` is from `std::time::Instant` and `Instant::now()` represents the current time. 
     
 - [`Entry`](https://github.com/solana-labs/solana/blob/d0b1f2c7c0ac90543ed6935f65b7cfc4673f74da/entry/src/entry.rs#L135)
+    - The documentation explains the `Entry` struct.
+        ```Rust
+        #[derive(Serialize, Deserialize, Debug, Default, PartialEq, Eq, Clone)]
+        pub struct Entry {
+            /// The number of hashes since the previous Entry ID.
+            pub num_hashes: u64,
+        
+            /// The SHA-256 hash `num_hashes` after the previous Entry ID.
+            pub hash: Hash,
+        
+            /// An unordered list of transactions that were observed before the Entry ID was
+            /// generated. They may have been observed before a previous Entry ID but were
+            /// pushed back into this list to ensure deterministic interpretation of the ledger.
+            pub transactions: Vec<VersionedTransaction>,
+        }
+        ```
 - [`PohService`](https://github.com/solana-labs/solana/blob/d0b1f2c7c0ac90543ed6935f65b7cfc4673f74da/poh/src/poh_service.rs#L20)
+  ```Rust
+  pub struct PohService {
+    tick_producer: JoinHandle<()>,
+  }
+  ```
+  - The `tick_producer` field uses `std::thread::JoinHandle` to attach to a thread and it can be joined which means the `join` function will wait until the thread is finished.
+    
 - [`PohRecorder`](https://github.com/solana-labs/solana/blob/d0b1f2c7c0ac90543ed6935f65b7cfc4673f74da/poh/src/poh_recorder.rs#L282)
 
 ### Main Functions
