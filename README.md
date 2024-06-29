@@ -69,7 +69,7 @@ Chain: Node {
     - `hashes_per_tick` is the number of hashes in each tick chain.
     - `remaining_hashes` is the number of remaining hashes in the proof of history chain.
     - `tick_number` is the number of ticks per slot. 
-    - `slot_start_time` is from `std::time::Instant` and `Instant::now()` represents the current time. 
+    - `slot_start_time` is from [`std::time::Instant`](https://doc.rust-lang.org/nightly/std/time/struct.Instant.html) and [`Instant::now()`](https://doc.rust-lang.org/nightly/std/time/struct.Instant.html#method.now) represents the current time. 
     
 - [`Entry`](https://github.com/solana-labs/solana/blob/d0b1f2c7c0ac90543ed6935f65b7cfc4673f74da/entry/src/entry.rs#L135)
     - The documentation explains the `Entry` struct.
@@ -94,7 +94,7 @@ Chain: Node {
     tick_producer: JoinHandle<()>,
   }
   ```
-  - The `tick_producer` field uses `std::thread::JoinHandle` to attach to a thread and it can be joined which means the `join` function will wait until the thread is finished.
+  - The `tick_producer` field uses [`std::thread::JoinHandle`](https://doc.rust-lang.org/std/thread/struct.JoinHandle.html#) to attach to a thread and it can be joined which means the [`join`](https://doc.rust-lang.org/std/thread/struct.JoinHandle.html#method.join) function will wait until the thread is finished.
     
 - [`PohRecorder`](https://github.com/solana-labs/solana/blob/d0b1f2c7c0ac90543ed6935f65b7cfc4673f74da/poh/src/poh_recorder.rs#L282)
 
