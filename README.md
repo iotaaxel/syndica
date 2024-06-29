@@ -8,7 +8,7 @@ The task consists of three sub-tasks:
 receiving hashes to mix into the chain.
 - [x] Write a short explanation of the methods/structures to understand them more in-depth and how they connect. 
 
-## Example Code
+## Example Run
 
 ### Usage
 ```Rust
