@@ -99,21 +99,21 @@ Chain: Node {
 - [`PohRecorder`](https://github.com/solana-labs/solana/blob/d0b1f2c7c0ac90543ed6935f65b7cfc4673f74da/poh/src/poh_recorder.rs#L282)
   ```Rust
   pub struct PohRecorder {
-    pub poh: Arc<Mutex<Poh>>,
-    tick_height: u64,
-    clear_bank_signal: Option<Sender<bool>>,
+    pub poh: Arc<Mutex<Poh>>, // able to access proof of history data across multiple threads
+    tick_height: u64, // the height of the tick
+    clear_bank_signal: Option<Sender<bool>>, // a sender of whether or not to clear the signal
     start_bank: Arc<Bank>,         // parent slot
     start_tick_height: u64,        // first tick_height this recorder will observe
     tick_cache: Vec<(Entry, u64)>, // cache of entry and its tick_height
-    working_bank: Option<WorkingBank>,
+    working_bank: Option<WorkingBank>, 
     sender: Sender<WorkingBankEntry>,
-    poh_timing_point_sender: Option<PohTimingSender>,
+    poh_timing_point_sender: Option<PohTimingSender>, // an optional sender
     leader_first_tick_height_including_grace_ticks: Option<u64>,
     leader_last_tick_height: u64, // zero if none
     grace_ticks: u64,
-    id: Pubkey,
-    blockstore: Arc<Blockstore>,
-    leader_schedule_cache: Arc<LeaderScheduleCache>,
+    id: Pubkey, // public key
+    blockstore: Arc<Blockstore>, // thread-safe
+    leader_schedule_cache: Arc<LeaderScheduleCache>, // thread-safe
     ticks_per_slot: u64,
     target_ns_per_tick: u64,
     record_lock_contention_us: u64,
@@ -125,10 +125,10 @@ Chain: Node {
     record_us: u64,
     report_metrics_us: u64,
     ticks_from_record: u64,
-    last_metric: Instant,
-    record_sender: Sender<Record>,
-    leader_bank_notifier: Arc<LeaderBankNotifier>,
-    pub is_exited: Arc<AtomicBool>,
+    last_metric: Instant, // represents the current time
+    record_sender: Sender<Record>, // a sender for records
+    leader_bank_notifier: Arc<LeaderBankNotifier>, // thread-safe 
+    pub is_exited: Arc<AtomicBool>, // thread-safe
   }
   ```
 
@@ -253,52 +253,68 @@ Chain: Node {
 }
 ```
 - [`PohService :: tick_producer(...)`](https://github.com/solana-labs/solana/blob/d0b1f2c7c0ac90543ed6935f65b7cfc4673f74da/poh/src/poh_service.rs#L332)
-```Rust
-fn tick_producer(
-        poh_recorder: Arc<RwLock<PohRecorder>>,
-        poh_exit: &AtomicBool,
-        ticks_per_slot: u64,
-        hashes_per_batch: u64,
-        record_receiver: Receiver<Record>,
-        target_ns_per_tick: u64,
-    ) {
-        let poh = poh_recorder.read().unwrap().poh.clone();
-        let mut timing = PohTiming::new();
-        let mut next_record = None;
-        loop {
-            let should_tick = Self::record_or_hash(
-                &mut next_record,
-                &poh_recorder,
-                &mut timing,
-                &record_receiver,
-                hashes_per_batch,
-                &poh,
-                target_ns_per_tick,
-            );
-            if should_tick {
-                // Lock PohRecorder only for the final hash. record_or_hash will lock PohRecorder for record calls but not for hashing.
-                {
-                    let mut lock_time = Measure::start("lock");
-                    let mut poh_recorder_l = poh_recorder.write().unwrap();
-                    lock_time.stop();
-                    timing.total_lock_time_ns += lock_time.as_ns();
-                    let mut tick_time = Measure::start("tick");
-                    poh_recorder_l.tick();
-                    tick_time.stop();
-                    timing.total_tick_time_ns += tick_time.as_ns();
-                }
-                timing.num_ticks += 1;
-
-                timing.report(ticks_per_slot);
-                if poh_exit.load(Ordering::Relaxed) {
-                    break;
+    ```Rust
+    fn tick_producer(
+            poh_recorder: Arc<RwLock<PohRecorder>>,
+            poh_exit: &AtomicBool, 
+            ticks_per_slot: u64,
+            hashes_per_batch: u64,
+            record_receiver: Receiver<Record>,
+            target_ns_per_tick: u64,
+        ) {
+            let poh = poh_recorder.read().unwrap().poh.clone();
+            let mut timing = PohTiming::new();
+            let mut next_record = None;
+            loop {
+                // Determine if a tick is needed
+                let should_tick = Self::record_or_hash(
+                    &mut next_record,
+                    &poh_recorder,
+                    &mut timing,
+                    &record_receiver,
+                    hashes_per_batch,
+                    &poh,
+                    target_ns_per_tick,
+                );
+                if should_tick {
+                    // Lock PohRecorder only for the final hash. record_or_hash will lock PohRecorder for record calls but not for hashing.
+                    {
+                        let mut lock_time = Measure::start("lock");
+                        let mut poh_recorder_l = poh_recorder.write().unwrap();
+                        lock_time.stop(); // update the duration time
+                        timing.total_lock_time_ns += lock_time.as_ns();
+                        let mut tick_time = Measure::start("tick");
+                        poh_recorder_l.tick();
+                        tick_time.stop(); // update the duration time
+                        timing.total_tick_time_ns += tick_time.as_ns();
+                    }
+                    timing.num_ticks += 1;
+    
+                    timing.report(ticks_per_slot);
+                    if poh_exit.load(Ordering::Relaxed) { // only the memory directly touched by the operation is synchronized (see [sync::atomic::Ordering](https://doc.rust-lang.org/std/sync/atomic/enum.Ordering.html))
+                        break;
+                    }
                 }
             }
         }
-    }
-```
+    ```
+    - Some of the underlying data structures are the following: 
+        ```Rust
+        struct PohTiming {
+            num_ticks: u64,
+            num_hashes: u64,
+            total_sleep_us: u64,
+            total_lock_time_ns: u64,
+            total_hash_time_ns: u64,
+            total_tick_time_ns: u64,
+            last_metric: Instant,
+            total_record_time_us: u64,
+            total_send_record_result_us: u64,
+        }
+        ```
+        
 
 ## Future Work
-- Consider adding additional fields like `From`, `To`, and `Txn Fee`. See [etherscan](https://etherscan.io/txs) for an example.
+- Consider adding fields like `From`, `To`, and `Txn Fee`. See [etherscan](https://etherscan.io/txs) for an example.
 - Consider using multiple threads and asynchronous functions. 
 - Add test coverage. 
