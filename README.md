@@ -97,6 +97,41 @@ Chain: Node {
   - The `tick_producer` field uses [`std::thread::JoinHandle`](https://doc.rust-lang.org/std/thread/struct.JoinHandle.html#) to attach to a thread and it can be joined which means the [`join`](https://doc.rust-lang.org/std/thread/struct.JoinHandle.html#method.join) function will wait until the thread is finished.
     
 - [`PohRecorder`](https://github.com/solana-labs/solana/blob/d0b1f2c7c0ac90543ed6935f65b7cfc4673f74da/poh/src/poh_recorder.rs#L282)
+  ```Rust
+  pub struct PohRecorder {
+    pub poh: Arc<Mutex<Poh>>,
+    tick_height: u64,
+    clear_bank_signal: Option<Sender<bool>>,
+    start_bank: Arc<Bank>,         // parent slot
+    start_tick_height: u64,        // first tick_height this recorder will observe
+    tick_cache: Vec<(Entry, u64)>, // cache of entry and its tick_height
+    working_bank: Option<WorkingBank>,
+    sender: Sender<WorkingBankEntry>,
+    poh_timing_point_sender: Option<PohTimingSender>,
+    leader_first_tick_height_including_grace_ticks: Option<u64>,
+    leader_last_tick_height: u64, // zero if none
+    grace_ticks: u64,
+    id: Pubkey,
+    blockstore: Arc<Blockstore>,
+    leader_schedule_cache: Arc<LeaderScheduleCache>,
+    ticks_per_slot: u64,
+    target_ns_per_tick: u64,
+    record_lock_contention_us: u64,
+    flush_cache_no_tick_us: u64,
+    flush_cache_tick_us: u64,
+    send_entry_us: u64,
+    tick_lock_contention_us: u64,
+    total_sleep_us: u64,
+    record_us: u64,
+    report_metrics_us: u64,
+    ticks_from_record: u64,
+    last_metric: Instant,
+    record_sender: Sender<Record>,
+    leader_bank_notifier: Arc<LeaderBankNotifier>,
+    pub is_exited: Arc<AtomicBool>,
+  }
+  ```
+  - #TODO: ....
 
 ### Main Functions
 - [`Poh :: tick(...)`](https://github.com/solana-labs/solana/blob/d0b1f2c7c0ac90543ed6935f65b7cfc4673f74da/entry/src/poh.rs#L90)
