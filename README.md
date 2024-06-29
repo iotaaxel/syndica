@@ -47,6 +47,30 @@ Chain: Node {
 
 ### Important Structs
 - [`Poh`](https://github.com/solana-labs/solana/blob/d0b1f2c7c0ac90543ed6935f65b7cfc4673f74da/entry/src/poh.rs#L10)
+    ```Rust
+    pub struct Poh {
+        pub hash: Hash,
+        num_hashes: u64,
+        hashes_per_tick: u64,
+        remaining_hashes: u64,
+        tick_number: u64,
+        slot_start_time: Instant,
+    }
+    ```
+    - The `hash` field has the following underlying structure:
+        ```Rust
+        const HASH_BYTES: usize = 32;
+        #[derive(AbiExample)]
+        pub struct Hash(pub [u8; HASH_BYTES]);
+        ```
+        - Calling `Hash::default()` will give bytes in the form `Hash([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])`.
+     
+    - `num_hashes` is the total number of hashes in the proof of history chain.
+    - `hashes_per_tick` is the number of hashes in each tick chain.
+    - `remaining_hashes` is the number of remaining hashes in the proof of history chain.
+    - `tick_number` is the number of ticks per slot. 
+    - `slot_start_time` is from `std::time::Instant` and `Instant::now()` represents the current time. 
+    
 - [`Entry`](https://github.com/solana-labs/solana/blob/d0b1f2c7c0ac90543ed6935f65b7cfc4673f74da/entry/src/entry.rs#L135)
 - [`PohService`](https://github.com/solana-labs/solana/blob/d0b1f2c7c0ac90543ed6935f65b7cfc4673f74da/poh/src/poh_service.rs#L20)
 - [`PohRecorder`](https://github.com/solana-labs/solana/blob/d0b1f2c7c0ac90543ed6935f65b7cfc4673f74da/poh/src/poh_recorder.rs#L282)
