@@ -131,14 +131,172 @@ Chain: Node {
     pub is_exited: Arc<AtomicBool>,
   }
   ```
-  - #TODO: ....
 
 ### Main Functions
 - [`Poh :: tick(...)`](https://github.com/solana-labs/solana/blob/d0b1f2c7c0ac90543ed6935f65b7cfc4673f74da/entry/src/poh.rs#L90)
+  ```Rust
+      pub fn tick(&mut self) -> Option<PohEntry> {
+            self.hash = hash(self.hash.as_ref()); // hash the current hash value
+            self.num_hashes += 1; // increment the number of total hashes
+            self.remaining_hashes -= 1; // decrement the number of remaining hashes
+    
+            // If we are in low power mode then always generate a tick.
+            // Otherwise only tick if there are no remaining hashes
+            if self.hashes_per_tick != LOW_POWER_MODE && self.remaining_hashes != 0 {
+                return None;
+            }
+    
+            let num_hashes = self.num_hashes;
+            self.remaining_hashes = self.hashes_per_tick; // the number of remaining hashes in a tick
+            self.num_hashes = 0; // the default number of hashes
+            self.tick_number += 1; // increment the number of ticks
+            // Return a proof of history entry 
+            Some(PohEntry {
+                num_hashes,
+                hash: self.hash,
+            })
+        }
+    }
+  ```
+
 - [`Poh :: record(...)`](https://github.com/solana-labs/solana/blob/d0b1f2c7c0ac90543ed6935f65b7cfc4673f74da/entry/src/poh.rs#L74)
+  ```Rust
+  pub fn record(&mut self, mixin: Hash) -> Option<PohEntry> {
+        // If only one hash left
+        if self.remaining_hashes == 1 {
+            return None; // Caller needs to `tick()` first
+        }
+
+        self.hash = hashv(&[self.hash.as_ref(), mixin.as_ref()]); // update the new hash with given hash
+        let num_hashes = self.num_hashes + 1; // increment the total number of hashes
+        self.num_hashes = 0; // the default number of hashes
+        self.remaining_hashes -= 1; // the number of remaining hashes
+        // Return a proof of history entry
+        Some(PohEntry {
+            num_hashes,
+            hash: self.hash,
+        })
+    }
+  ```
+    - One of the underlying structures is `hashv` which hashes multiple values: 
+        ```Rust
+        pub fn hashv(&mut self, vals: &[&[u8]]) {
+            for val in vals {
+                self.hash(val);
+            }
+        }
+        ```
 - [`Poh :: hash(...)`](https://github.com/solana-labs/solana/blob/d0b1f2c7c0ac90543ed6935f65b7cfc4673f74da/entry/src/poh.rs#L61)
+  ```Rust
+  pub fn hash(&mut self, max_num_hashes: u64) -> bool {
+        // Get the minimum number of hashes (subtracting by 1 just in case only one hash left)
+        let num_hashes = std::cmp::min(self.remaining_hashes - 1, max_num_hashes);
+        // Loop through hashes
+        for _ in 0..num_hashes {
+            // hash the current hash 
+            self.hash = hash(self.hash.as_ref());
+        }
+        self.num_hashes += num_hashes; // increment by the number of hashes
+        self.remaining_hashes -= num_hashes; // decrement by the number of hashes
+
+        assert!(self.remaining_hashes > 0); // check that there are available hashes left
+        self.remaining_hashes == 1 // Return `true` if caller needs to `tick()` next 
+    }
+  ```
+  
 - [`PohRecorder :: record(...)`](https://github.com/solana-labs/solana/blob/d0b1f2c7c0ac90543ed6935f65b7cfc4673f74da/poh/src/poh_recorder.rs#L205)
+```Rust
+// Returns the index of `transactions.first()` in the slot, if being tracked by WorkingBank
+    pub fn record(
+        &self,
+        bank_slot: Slot, // A [slot](https://docs.rs/solana-sdk/latest/solana_sdk/clock/type.Slot.html) is a  unit of time given to a leader for encoding a block.
+        mixin: Hash,
+        transactions: Vec<VersionedTransaction>,
+    ) -> Result<Option<usize>> {
+        // create a new channel so that there is only 1 sender and when it goes out of scope, the receiver fails
+        let (result_sender, result_receiver) = unbounded();
+        // Attempt to send the record
+        let res =
+            self.record_sender
+                .send(Record::new(mixin, transactions, bank_slot, result_sender));
+        if res.is_err() {
+            // If the channel is dropped, then the validator is shutting down so return that we are hitting
+            //  the max tick height to stop transaction processing and flush any transactions in the pipeline.
+            return Err(PohRecorderError::MaxHeightReached);
+        }
+        // Besides validator exit, this timeout should primarily be seen to affect test execution environments where the various pieces can be shutdown abruptly
+        let mut is_exited = false;
+        loop {
+            // Try to receive the result
+            let res = result_receiver.recv_timeout(Duration::from_millis(1000));
+            // match on the result
+            match res {
+                Err(RecvTimeoutError::Timeout) => {
+                    if is_exited {
+                        return Err(PohRecorderError::MaxHeightReached);
+                    } else {
+                        // A result may have come in between when we timed out checking this
+                        // bool, so check the channel again, even if is_exited == true
+                        is_exited = self.is_exited.load(Ordering::SeqCst);
+                    }
+                }
+                Err(RecvTimeoutError::Disconnected) => {
+                    return Err(PohRecorderError::MaxHeightReached);
+                }
+                Ok(result) => {
+                    // Return the result if successful
+                    return result;
+                }
+            }
+        }
+    }
+}
+```
 - [`PohService :: tick_producer(...)`](https://github.com/solana-labs/solana/blob/d0b1f2c7c0ac90543ed6935f65b7cfc4673f74da/poh/src/poh_service.rs#L332)
+```Rust
+fn tick_producer(
+        poh_recorder: Arc<RwLock<PohRecorder>>,
+        poh_exit: &AtomicBool,
+        ticks_per_slot: u64,
+        hashes_per_batch: u64,
+        record_receiver: Receiver<Record>,
+        target_ns_per_tick: u64,
+    ) {
+        let poh = poh_recorder.read().unwrap().poh.clone();
+        let mut timing = PohTiming::new();
+        let mut next_record = None;
+        loop {
+            let should_tick = Self::record_or_hash(
+                &mut next_record,
+                &poh_recorder,
+                &mut timing,
+                &record_receiver,
+                hashes_per_batch,
+                &poh,
+                target_ns_per_tick,
+            );
+            if should_tick {
+                // Lock PohRecorder only for the final hash. record_or_hash will lock PohRecorder for record calls but not for hashing.
+                {
+                    let mut lock_time = Measure::start("lock");
+                    let mut poh_recorder_l = poh_recorder.write().unwrap();
+                    lock_time.stop();
+                    timing.total_lock_time_ns += lock_time.as_ns();
+                    let mut tick_time = Measure::start("tick");
+                    poh_recorder_l.tick();
+                    tick_time.stop();
+                    timing.total_tick_time_ns += tick_time.as_ns();
+                }
+                timing.num_ticks += 1;
+
+                timing.report(ticks_per_slot);
+                if poh_exit.load(Ordering::Relaxed) {
+                    break;
+                }
+            }
+        }
+    }
+```
 
 ## Future Work
 - Consider adding additional fields like `From`, `To`, and `Txn Fee`. See [etherscan](https://etherscan.io/txs) for an example.
