@@ -316,5 +316,13 @@ Chain: Node {
 
 ## Future Work
 - Consider adding fields like `From`, `To`, and `Txn Fee`. See [etherscan](https://etherscan.io/txs) for an example.
-- Consider using multiple threads and asynchronous functions. 
+- Consider using multiple threads and asynchronous functions.
+- Apply concurrency techniques when appropriate. 
 - Add test coverage. 
+- The current example in `main` should be moved into a test.
+- Add a CI/CD workflow for the project.
+- Add a linter (consider `clippy`).
+- Do benchmarking and note any limitations for the current architecture.
+- If integrating any databases, consider the CAP Theorem, comment on scaling, and make a migration plan if potentially moving to a different database or tech stack.
+- Consider offloading some intensive calculations to `Redis`.
+- Please consider caching and sharding when appropriate. 
